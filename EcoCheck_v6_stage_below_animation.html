@@ -1,0 +1,1459 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EcoCheck | 내 차 탄소배출 확인</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- OCR을 위한 Tesseract.js 추가 -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <style>
+    @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Pretendard', sans-serif;
+      background: #f5f8f6;
+      color: #17221c;
+    }
+
+    .app-shell {
+      background:
+        radial-gradient(circle at 10% 0%, rgba(34,197,94,.10), transparent 28%),
+        radial-gradient(circle at 90% 8%, rgba(14,165,233,.08), transparent 25%),
+        #f5f8f6;
+    }
+
+    .glass-header {
+      background: rgba(255,255,255,.88);
+      backdrop-filter: blur(16px);
+      border-bottom: 1px solid #e5ebe7;
+    }
+
+    .card {
+      background: #fff;
+      border: 1px solid #e4ebe6;
+      box-shadow: 0 12px 32px rgba(39, 67, 48, .07);
+    }
+
+    .input-ui {
+      background: #f8faf9;
+      border: 1px solid #dce5df;
+      color: #17221c;
+      transition: .2s ease;
+    }
+
+    .input-ui:focus {
+      outline: none;
+      background: #fff;
+      border-color: #22a75a;
+      box-shadow: 0 0 0 4px rgba(34,167,90,.10);
+    }
+
+    .primary-btn {
+      background: linear-gradient(135deg, #1fa957, #37bd69);
+      box-shadow: 0 10px 20px rgba(31,169,87,.22);
+    }
+    .primary-btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 14px 24px rgba(31,169,87,.28);
+    }
+
+    .result-reveal {
+      animation: resultReveal .55s ease both;
+    }
+
+    @keyframes resultReveal {
+      from { opacity: 0; transform: translateY(16px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner { animation: spin .9s linear infinite; }
+
+    .meter {
+      height: 12px;
+      background: #edf2ee;
+      border-radius: 999px;
+      overflow: hidden;
+    }
+    .meter > div {
+      height: 100%;
+      border-radius: 999px;
+      transition: width .8s ease;
+      background: linear-gradient(90deg, #35bd6c, #f4b942, #ef6b5b);
+    }
+
+    .soft-green { background: #effaf2; border-color: #cfead6; }
+    .soft-blue { background: #eff8fd; border-color: #cce6f5; }
+    .soft-orange { background: #fff8ed; border-color: #f5dfbb; }
+
+    .hide { display: none !important; }
+
+    .number-pop { animation: numberPop .65s ease both; }
+    @keyframes numberPop {
+      0% { opacity: 0; transform: scale(.9); }
+      100% { opacity: 1; transform: scale(1); }
+    }
+
+    /* === Eco impact theme visualizations === */
+    .impact-tabs { scrollbar-width: none; }
+    .impact-tabs::-webkit-scrollbar { display: none; }
+    .impact-tab {
+      white-space: nowrap;
+      transition: .2s ease;
+    }
+    .impact-tab.active {
+      background: #17221c;
+      color: #fff;
+      border-color: #17221c;
+      box-shadow: 0 6px 14px rgba(23,34,28,.12);
+    }
+
+    .impact-stage-card {
+      position: relative;
+      min-height: 390px;
+      overflow: hidden;
+      border-radius: 24px;
+      background: #eef7fb;
+      border: 1px solid #d9e9ef;
+    }
+    .impact-caption {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      z-index: 20;
+      padding: 8px 11px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.9);
+      border: 1px solid rgba(255,255,255,.85);
+      box-shadow: 0 8px 20px rgba(19, 49, 63, .08);
+      backdrop-filter: blur(8px);
+    }
+    .impact-stage-copy {
+      position: absolute;
+      left: 16px;
+      right: 16px;
+      bottom: 14px;
+      z-index: 20;
+      padding: 13px 15px;
+      border-radius: 18px;
+      background: rgba(255,255,255,.9);
+      border: 1px solid rgba(255,255,255,.9);
+      box-shadow: 0 10px 24px rgba(19, 49, 63, .10);
+      backdrop-filter: blur(8px);
+    }
+
+    /* Glacier */
+    .glacier-scene {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      background: linear-gradient(180deg, #dff1ff 0%, #b9dff0 48%, #8bc4d8 100%);
+      animation: glacierBreathe 7s ease-in-out infinite;
+    }
+    @keyframes glacierBreathe {
+      0%,100% { transform: scale(1); }
+      50% { transform: scale(1.01); }
+    }
+    .glacier-sky {
+      position: absolute; inset: 0;
+      background:
+        radial-gradient(circle at 12% 20%, rgba(255,255,255,.85) 0 10px, transparent 11px),
+        radial-gradient(circle at 77% 16%, rgba(255,255,255,.75) 0 14px, transparent 15px),
+        linear-gradient(180deg, rgba(255,255,255,.18), transparent 48%);
+    }
+    .glacier-horizon {
+      position: absolute; left: -5%; right: -5%; bottom: 35%; height: 25%;
+      background: linear-gradient(180deg, rgba(239,250,255,.9), rgba(201,230,241,.72));
+      clip-path: polygon(0 55%, 9% 30%, 17% 48%, 27% 16%, 36% 50%, 48% 22%, 59% 42%, 71% 12%, 82% 42%, 92% 19%, 100% 48%, 100% 100%, 0 100%);
+      opacity: .9;
+    }
+    .iceberg {
+      position: absolute;
+      left: 50%; transform: translateX(-50%);
+      width: var(--ice-width); height: var(--ice-height);
+      bottom: var(--ice-bottom); z-index: 4;
+      border-radius: 24px 30px 14px 14px;
+      background:
+        linear-gradient(135deg, rgba(255,255,255,.95) 0 8%, transparent 8% 100%),
+        linear-gradient(160deg, #ecfbff 0%, #a8dce9 38%, #4f9eb3 100%);
+      border: 2px solid rgba(255,255,255,.75);
+      box-shadow: inset 0 -18px 0 rgba(33,114,137,.16), 0 18px 35px rgba(49,104,120,.12);
+      transition: width 1.2s ease, height 1.2s ease, bottom 1.2s ease;
+    }
+    .iceberg::before, .iceberg::after {
+      content: ''; position: absolute; border-radius: 999px; background: rgba(255,255,255,.72);
+    }
+    .iceberg::before { width: 70%; height: 10px; left: 13%; top: 12%; transform: rotate(-5deg); }
+    .iceberg::after { width: 42%; height: 7px; left: 42%; top: 38%; transform: rotate(8deg); opacity: .55; }
+    .ice-crack {
+      position: absolute; inset: 18% 12% 8%;
+      background: repeating-linear-gradient(125deg, transparent 0 26px, rgba(43,117,138,.22) 27px 29px, transparent 30px 58px);
+      opacity: .75; border-radius: 20px;
+    }
+    .polar-bear {
+      position: absolute; left: 50%; z-index: 8;
+      transform: translateX(-50%) scale(var(--bear-scale));
+      bottom: calc(var(--ice-bottom) + var(--ice-height) - 10px);
+      width: 118px; height: 78px;
+      transform-origin: bottom center;
+      transition: bottom 1.2s ease, transform 1.2s ease;
+      animation: bearFloat 3.2s ease-in-out infinite;
+    }
+    .polar-bear .body {
+      position: absolute; left: 18px; top: 28px; width: 72px; height: 38px;
+      background: #fff; border-radius: 48% 52% 44% 40%;
+      box-shadow: inset -8px -6px 0 rgba(208,229,236,.75);
+    }
+    .polar-bear .head {
+      position: absolute; left: 66px; top: 13px; width: 38px; height: 34px;
+      background: #fff; border-radius: 50%;
+      box-shadow: inset -5px -4px 0 rgba(208,229,236,.8);
+    }
+    .polar-bear .ear1, .polar-bear .ear2 { position: absolute; top: 8px; width: 11px; height: 11px; border-radius: 50%; background: #fff; }
+    .polar-bear .ear1 { left: 71px; } .polar-bear .ear2 { left: 94px; }
+    .polar-bear .eye { position: absolute; left: 88px; top: 26px; width: 4px; height: 4px; border-radius: 50%; background: #203039; }
+    .polar-bear .nose { position: absolute; left: 101px; top: 31px; width: 6px; height: 5px; border-radius: 60% 60% 50% 50%; background: #33464f; }
+    .polar-bear .leg { position: absolute; top: 58px; width: 12px; height: 18px; border-radius: 0 0 8px 8px; background: #eef7fa; }
+    .polar-bear .leg.l1 { left: 28px; } .polar-bear .leg.l2 { left: 56px; }
+    @keyframes bearFloat { 0%,100% { margin-top: 0; } 50% { margin-top: -3px; } }
+    .glacier-splash {
+      position: absolute; inset: auto 0 25% 0; height: 18%; z-index: 11; pointer-events: none;
+      background: radial-gradient(circle at 20% 50%, rgba(255,255,255,.82) 0 2px, transparent 3px), radial-gradient(circle at 72% 30%, rgba(255,255,255,.74) 0 2px, transparent 3px);
+      background-size: 90px 55px, 120px 70px; opacity: .35; animation: splashMove 4.5s linear infinite;
+    }
+    @keyframes splashMove { from { transform: translateX(0); } to { transform: translateX(35px); } }
+    .glacier-tint { position: absolute; inset: 0; z-index: 12; background: linear-gradient(180deg, rgba(255,255,255,.12), rgba(7,62,86,.04)); pointer-events: none; }
+
+    /* Island */
+    .island-scene {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(180deg, #dff4ff 0%, #a7dcf0 42%, #4ca9c5 100%);
+    }
+    .island-cloud {
+      position: absolute;
+      width: 130px;
+      height: 44px;
+      border-radius: 40px;
+      background: rgba(255,255,255,.75);
+      filter: blur(.2px);
+      animation: cloudDrift 15s linear infinite;
+    }
+    .island-cloud::before,
+    .island-cloud::after {
+      content: '';
+      position: absolute;
+      border-radius: 50%;
+      background: inherit;
+    }
+    .island-cloud::before { width: 48px; height: 48px; left: 22px; top: -22px; }
+    .island-cloud::after { width: 62px; height: 62px; right: 18px; top: -30px; }
+    @keyframes cloudDrift {
+      0% { transform: translateX(-40px); }
+      50% { transform: translateX(270px); }
+      100% { transform: translateX(-40px); }
+    }
+    .island-water {
+      position: absolute;
+      inset: auto 0 0 0;
+      height: 47%;
+      background:
+        repeating-linear-gradient(180deg, rgba(255,255,255,.14) 0 2px, transparent 2px 18px),
+        linear-gradient(180deg, rgba(33,145,176,.10), rgba(23,111,144,.42));
+      animation: seaPulse 4s ease-in-out infinite;
+    }
+    @keyframes seaPulse {
+      0%,100% { transform: translateY(0); }
+      50% { transform: translateY(-5px); }
+    }
+    .island-land {
+      position: absolute;
+      left: 50%;
+      bottom: 33%;
+      width: var(--island-width);
+      height: 110px;
+      transform: translateX(-50%) rotate(-2deg);
+      border-radius: 56% 44% 43% 57% / 57% 58% 42% 43%;
+      background: linear-gradient(145deg, #9fd46b 0%, #5eaf56 48%, #2f7d50 100%);
+      box-shadow: inset -18px -16px 0 rgba(29,84,48,.10), 0 16px 28px rgba(21,84,89,.16);
+      transition: width 1.3s cubic-bezier(.2,.7,.25,1), bottom 1.3s cubic-bezier(.2,.7,.25,1), height 1.3s cubic-bezier(.2,.7,.25,1);
+      animation: islandFloat 3.6s ease-in-out infinite;
+    }
+    @keyframes islandFloat {
+      0%,100% { transform: translateX(-50%) rotate(-2deg) translateY(0); }
+      50% { transform: translateX(-50%) rotate(-1deg) translateY(-4px); }
+    }
+    .island-house {
+      position: absolute;
+      left: 50%;
+      bottom: calc(33% + 52px);
+      width: 70px;
+      height: 56px;
+      transform: translateX(-50%) scale(var(--house-scale));
+      transform-origin: center bottom;
+      transition: bottom 1.3s ease, transform 1.3s ease, opacity 1.1s ease;
+      z-index: 8;
+    }
+    .island-house .body {
+      position: absolute; left: 10px; right: 10px; bottom: 0; height: 34px;
+      background: #fff; border: 2px solid #d5e0df; border-radius: 4px;
+      box-shadow: 0 6px 8px rgba(0,0,0,.08);
+    }
+    .island-house .roof {
+      position: absolute; left: 7px; right: 7px; top: 5px; height: 26px;
+      background: #c96b5d; clip-path: polygon(50% 0, 100% 100%, 0 100%);
+    }
+    .island-house .door {
+      position: absolute; width: 12px; height: 22px; left: 29px; bottom: 0;
+      background: #8a6755; border-radius: 3px 3px 0 0;
+    }
+
+    /* Trees */
+    .forest-scene {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(180deg, #edf8f2 0%, #d3eadb 54%, #b9d7c0 100%);
+      overflow: hidden;
+    }
+    .forest-ground {
+      position: absolute;
+      inset: auto 0 0 0;
+      height: 30%;
+      background: linear-gradient(180deg, #96be91, #6e9f77);
+    }
+    .tree-row {
+      position: absolute;
+      left: 50%;
+      bottom: 18%;
+      width: 88%;
+      height: 56%;
+      transform: translateX(-50%);
+      display: flex;
+      align-items: end;
+      justify-content: space-around;
+      gap: 10px;
+    }
+    .tree-icon {
+      position: relative;
+      width: 46px;
+      height: 112px;
+      opacity: 0;
+      transform: translateY(18px) scale(.75);
+      animation: treeGrow .9s cubic-bezier(.2,.75,.25,1) forwards;
+    }
+    @keyframes treeGrow {
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    .tree-icon .crown {
+      position: absolute; left: 50%; top: 0; transform: translateX(-50%);
+      width: 42px; height: 78px;
+      background: linear-gradient(180deg, #4d9d5d, #226b48);
+      clip-path: polygon(50% 0, 100% 42%, 76% 42%, 98% 66%, 70% 66%, 88% 100%, 12% 100%, 30% 66%, 2% 66%, 24% 42%, 0 42%);
+      border-radius: 12px;
+    }
+    .tree-icon .trunk {
+      position: absolute; left: 18px; bottom: 0; width: 10px; height: 42px;
+      border-radius: 6px; background: #805f43;
+    }
+    .tree-glow {
+      position: absolute;
+      left: 50%; bottom: 28%;
+      width: 310px; height: 120px;
+      transform: translateX(-50%);
+      background: radial-gradient(circle, rgba(93,177,111,.22), transparent 68%);
+      filter: blur(8px);
+      animation: forestGlow 4s ease-in-out infinite;
+    }
+    @keyframes forestGlow {
+      0%,100% { transform: translateX(-50%) scale(1); opacity: .7; }
+      50% { transform: translateX(-50%) scale(1.08); opacity: 1; }
+    }
+
+    .stage-dots { display: flex; gap: 6px; }
+    .stage-dot {
+      width: 8px; height: 8px; border-radius: 50%; background: #d7e4dc;
+      transition: .25s ease;
+    }
+    .stage-dot.active { background: #1fa957; transform: scale(1.15); }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: .01ms !important;
+        animation-iteration-count: 1 !important;
+        scroll-behavior: auto !important;
+        transition-duration: .01ms !important;
+      }
+    }
+
+    @media (max-width: 640px) {
+      .hero-title { font-size: 2rem; line-height: 1.18; }
+    }
+  </style>
+</head>
+
+<body class="min-h-screen">
+<div class="app-shell min-h-screen pb-16">
+
+  <!-- Header -->
+  <header class="glass-header sticky top-0 z-50">
+    <div class="max-w-6xl mx-auto px-4 sm:px-6 py-3.5 flex items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-xl">🌱</div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="font-black tracking-tight text-lg text-slate-900">EcoCheck</h1>
+            <span class="text-[10px] font-bold px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100">내 차 탄소배출 확인</span>
+          </div>
+          <p class="text-[11px] text-slate-500 mt-0.5">주행 습관을 입력하면 예상 CO₂ 배출량을 계산해 드려요.</p>
+        </div>
+      </div>
+
+      <div class="hidden md:flex items-center gap-2">
+        <button onclick="simulateApiConnect('MyHyundai')" class="px-3 py-2 rounded-xl border border-transparent bg-blue-600 hover:bg-blue-700 text-xs font-semibold text-white transition-colors">
+          ⚡ MyHyundai
+        </button>
+        <button onclick="simulateApiConnect('Kia Connect')" class="px-3 py-2 rounded-xl border border-transparent bg-red-600 hover:bg-red-700 text-xs font-semibold text-white transition-colors">
+          ⚡ Kia Connect
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-6xl mx-auto px-4 sm:px-6 pt-8 space-y-7">
+
+    <!-- Hero -->
+    <section class="card rounded-3xl p-7 sm:p-9 text-center">
+      <div class="inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 text-xs font-bold mx-auto">
+        🚗 1분이면 충분해요
+      </div>
+      <h2 class="hero-title text-4xl sm:text-5xl font-black tracking-tight mt-5 text-slate-900">
+        월간 주행거리로 알아보는<br><span class="text-emerald-600">내 차의 탄소배출량</span>
+      </h2>
+      <p class="text-sm sm:text-base text-slate-500 leading-relaxed mt-4 max-w-2xl mx-auto">
+        차종과 월간 주행거리, 급가속·급감속 습관을 입력하면<br class="hidden sm:block">
+        내 차량의 예상 월간 CO₂ 배출량을 바로 확인할 수 있어요.
+      </p>
+      <div class="flex flex-wrap justify-center gap-2 mt-6 text-[11px] font-semibold">
+        <span class="px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-600">간단 입력</span>
+        <span class="px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-600">자동 계산</span>
+        <span class="px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-600">결과 시각화</span>
+      </div>
+    </section>
+
+    <!-- Input -->
+    <section class="card rounded-3xl overflow-hidden">
+      <div class="px-6 sm:px-8 py-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h3 class="font-black text-lg text-slate-900">내 주행 정보 입력</h3>
+          <p class="text-xs text-slate-500 mt-1">평소 운전 습관을 기준으로 대략적인 값을 넣어주세요.</p>
+        </div>
+        <label class="inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-600 cursor-pointer hover:bg-slate-100">
+          📷 계기판 사진 자동 입력
+          <input type="file" id="imageUpload" accept="image/*" onchange="handleImageUpload(event)" class="hidden">
+        </label>
+      </div>
+
+      <div class="p-6 sm:p-8">
+        <div class="grid md:grid-cols-2 gap-5">
+          <div class="md:col-span-2">
+            <label class="text-xs font-bold text-slate-700">차종</label>
+            <select id="vehicleSelect" onchange="updateVehicleSpec()" class="input-ui mt-2 w-full rounded-2xl px-4 py-3.5 text-sm font-semibold cursor-pointer">
+              <option value="compact">경차 (모닝/레이)</option>
+              <option value="subcompact">준중형 (아반떼)</option>
+              <option value="midsize">중형 (쏘나타/K5)</option>
+              <option value="large">준대형/대형 (그랜저/G80)</option>
+              <option value="suv_gv70" selected>SUV (Genesis GV70 2.5T)</option>
+              <option value="truck">화물차 (포터/봉고)</option>
+            </select>
+
+            <div class="grid grid-cols-2 gap-2 mt-2">
+              <div class="rounded-xl bg-slate-50 border border-slate-100 px-3 py-2.5 text-center">
+                <p class="text-[10px] text-slate-500">공차중량</p>
+                <p id="specWeight" class="text-xs font-bold mt-0.5 text-slate-800">1,825 kg</p>
+              </div>
+              <div class="rounded-xl bg-slate-50 border border-slate-100 px-3 py-2.5 text-center">
+                <p class="text-[10px] text-slate-500">Cd</p>
+                <p id="specCd" class="text-xs font-bold mt-0.5 text-slate-800">0.32</p>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <label class="text-xs font-bold text-slate-700">차량 연비 <span class="font-normal text-slate-400">(km/L)</span></label>
+            <input type="number" id="inputEff" value="10.7" min="1" step="0.1"
+              class="input-ui mt-2 w-full rounded-2xl px-4 py-3.5 text-sm font-bold text-emerald-700">
+          </div>
+          
+          <div>
+            <label class="text-xs font-bold text-slate-700">월간 주행거리 <span class="font-normal text-slate-400">(km)</span></label>
+            <input type="number" id="inputDistance" value="1100" min="0" step="100"
+              class="input-ui mt-2 w-full rounded-2xl px-4 py-3.5 text-sm font-bold">
+          </div>
+
+          <div class="grid grid-cols-2 gap-3 md:col-span-2">
+            <div>
+              <label class="text-xs font-bold text-slate-700">급가속 <span class="font-normal text-slate-400">(회/월)</span></label>
+              <input type="number" id="inputRapidAccel" value="0" min="0"
+                class="input-ui mt-2 w-full rounded-2xl px-4 py-3.5 text-sm font-bold">
+            </div>
+            <div>
+              <label class="text-xs font-bold text-slate-700">급감속 <span class="font-normal text-slate-400">(회/월)</span></label>
+              <input type="number" id="inputRapidBrake" value="0" min="0"
+                class="input-ui mt-2 w-full rounded-2xl px-4 py-3.5 text-sm font-bold">
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-6 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+          <button onclick="calculateEmissions()" id="calculateBtn"
+            class="primary-btn flex-1 py-4 rounded-2xl text-white font-black text-sm transition flex items-center justify-center gap-2">
+            🌿 내 탄소배출량 계산하기
+          </button>
+          <p class="text-[11px] text-slate-400 sm:w-64 leading-relaxed">
+            입력한 값으로 예상치를 계산합니다. 실제 배출량과는 차이가 있을 수 있어요.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Loading -->
+    <section id="loadingSection" class="hide">
+      <div class="card rounded-3xl p-10 text-center">
+        <div class="w-16 h-16 mx-auto rounded-full bg-emerald-50 border border-emerald-100 flex items-center justify-center">
+          <div class="spinner w-8 h-8 border-4 border-emerald-100 border-t-emerald-500 rounded-full"></div>
+        </div>
+        <h3 class="font-black text-xl text-slate-900 mt-5">주행 데이터를 계산하고 있어요</h3>
+        <p class="text-sm text-slate-500 mt-2">차량 연비와 주행 습관을 바탕으로 CO₂ 배출량을 분석 중입니다.</p>
+        <div class="max-w-md mx-auto h-2 rounded-full bg-slate-100 mt-6 overflow-hidden">
+          <div id="loadingBar" class="h-full rounded-full bg-emerald-500 w-0 transition-all duration-1000"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Result -->
+    <section id="resultSection" class="hide space-y-5">
+      <div class="card rounded-3xl p-6 sm:p-8 result-reveal">
+        <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-5">
+          <div>
+            <div class="inline-flex items-center gap-2 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-full px-3 py-1.5">
+              ✅ 계산 완료
+            </div>
+            <p class="text-sm font-bold text-slate-600 mt-5">당신의 예상 월간 CO₂ 배출량</p>
+            <div class="flex items-end gap-2 mt-1">
+              <span id="resultCo2" class="number-pop text-5xl sm:text-6xl font-black tracking-tight text-slate-900">0</span>
+              <span class="text-lg font-bold text-slate-500 pb-2">kg CO₂</span>
+            </div>
+            <p id="resultSentence" class="text-sm text-slate-500 mt-3"></p>
+          </div>
+
+          <div class="w-full lg:w-72">
+            <div class="flex justify-between items-center text-xs font-bold mb-2">
+              <span class="text-slate-600">참고선 대비</span>
+              <span id="resultRate" class="text-emerald-700">0%</span>
+            </div>
+            <div class="meter"><div id="resultMeter" style="width:0%"></div></div>
+            <div class="flex justify-between text-[10px] text-slate-400 mt-2">
+              <span>0 kg</span><span>250 kg</span><span>월간 참고선</span>
+            </div>
+          </div>
+        </div>
+        
+        <!-- 계산 공식 안내 블록 -->
+        <div class="mt-6 rounded-2xl bg-slate-50 border border-slate-200 p-4">
+          <p class="text-xs font-bold text-slate-700 mb-2">💡 어떻게 계산되었나요?</p>
+          <ul class="text-[11px] text-slate-500 space-y-1.5">
+            <li><strong>예상 연료 사용량(L)</strong> = 월간 주행거리(km) ÷ 차량 연비(km/L)</li>
+            <li><strong>기본 배출량(kg)</strong> = 예상 연료 사용량(L) × 2.31 (휘발유 1L당 배출계수, 환경부 기준)</li>
+            <li><strong>총 배출량</strong> = 기본 배출량 + 급가속·급감속 추가 배출량</li>
+          </ul>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-7">
+          <div class="soft-green border rounded-2xl p-4">
+            <p class="text-[11px] text-emerald-700 font-bold">기본 주행 배출</p>
+            <p class="text-2xl font-black text-slate-900 mt-1"><span id="baseCo2">0</span> kg</p>
+            <p class="text-[10px] text-slate-500 mt-1">주행거리 × 차량 연비</p>
+          </div>
+          <div class="soft-orange border rounded-2xl p-4">
+            <p class="text-[11px] text-orange-700 font-bold">급가속·급감속 영향</p>
+            <p class="text-2xl font-black text-slate-900 mt-1"><span id="extraCo2">0</span> kg</p>
+            <p class="text-[10px] text-slate-500 mt-1">운전 습관으로 추가 계산된 양</p>
+          </div>
+          <div class="soft-blue border rounded-2xl p-4">
+            <p class="text-[11px] text-sky-700 font-bold">예상 연료 사용량</p>
+            <p class="text-2xl font-black text-slate-900 mt-1"><span id="fuelUsed">0</span> L</p>
+            <p class="text-[10px] text-slate-500 mt-1">월간 기준 환산</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Visual impact themes -->
+      <div class="card rounded-3xl p-6 sm:p-8 result-reveal relative">
+        <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
+          <div>
+            <p class="text-xs font-bold text-emerald-700">내 탄소배출량 시각화</p>
+            <h3 class="text-xl font-black text-slate-900 mt-1">CO₂가 많아질수록 어떻게 달라질까요?</h3>
+            <p class="text-xs text-slate-500 mt-1">배출량을 3단계로 나눠 환경에 미치는 모습을 움직이는 화면으로 보여줍니다.</p>
+          </div>
+          
+          <!-- 단계별 미리보기 버튼 -->
+          <div class="flex gap-2">
+            <button onclick="previewStage(1)" class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-[10px] font-bold text-slate-600">1단계 보기</button>
+            <button onclick="previewStage(2)" class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-[10px] font-bold text-slate-600">2단계 보기</button>
+            <button onclick="previewStage(3)" class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-[10px] font-bold text-slate-600">3단계 보기</button>
+            <button onclick="restoreStage()" class="px-3 py-1.5 rounded-lg border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-[10px] font-bold text-emerald-700">내 결과로 복구</button>
+          </div>
+        </div>
+
+        <div class="impact-tabs flex gap-2 overflow-x-auto mt-5 pb-1">
+          <button id="impactTabGlacier" onclick="setImpactTheme('glacier')" class="impact-tab active px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-600">🧊 빙하가 녹는 모습</button>
+          <button id="impactTabIsland" onclick="setImpactTheme('island')" class="impact-tab px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-600">🏝️ 섬의 면적 변화</button>
+          <button id="impactTabTrees" onclick="setImpactTheme('trees')" class="impact-tab px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-600">🌳 필요한 나무의 양</button>
+        </div>
+
+        <div id="impactVisual" class="mt-4"></div>
+
+        <div class="mt-5 grid sm:grid-cols-2 gap-3">
+          <div id="impactStageCard" class="rounded-2xl bg-emerald-50 border border-emerald-100 p-5 sm:p-6 transition-all duration-300">
+            <div class="flex items-center justify-between gap-3">
+              <div>
+                <span class="text-xs text-slate-500 font-bold">배출량 단계</span>
+                <div class="flex items-baseline gap-2 mt-1">
+                  <span id="impactStageLabel" class="text-4xl sm:text-5xl font-black tracking-tight text-emerald-700 leading-none">1단계</span>
+                  <span id="impactStageLevelText" class="text-xl sm:text-2xl font-black text-emerald-700">낮은 배출</span>
+                </div>
+              </div>
+              <span class="stage-dots shrink-0"><i id="stageDot1" class="stage-dot"></i><i id="stageDot2" class="stage-dot"></i><i id="stageDot3" class="stage-dot"></i></span>
+            </div>
+            <p id="impactStageReason" class="text-sm sm:text-base font-bold text-slate-700 mt-3 leading-snug">배출량을 계산하면 단계가 표시됩니다.</p>
+          </div>
+          <div class="rounded-2xl bg-slate-50 border border-slate-100 p-4 flex flex-col justify-center">
+            <span class="text-[11px] text-slate-500">필요한 나무 환산</span>
+            <p class="text-2xl font-black text-slate-900 mt-1"><span id="treeCount">0</span><span class="text-sm font-bold ml-1">그루/월</span></p>
+            <p class="text-[10px] text-slate-400 mt-1">시연용 환산 기준으로 표시</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid lg:grid-cols-[1.2fr_.8fr] gap-5">
+        <div class="card rounded-3xl p-6 result-reveal">
+          <div class="flex items-start justify-between mb-4">
+            <div>
+              <h3 class="font-black text-slate-900">내 운전 습관이 배출량에 미치는 영향</h3>
+              <p class="text-xs text-slate-500 mt-1">현재 운전과 친환경 운전 적용 시 예상치를 비교했어요.</p>
+            </div>
+            <span class="text-xs font-bold px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-200 text-slate-500">kg CO₂ / 월</span>
+          </div>
+          <div class="h-72">
+            <canvas id="emissionChart"></canvas>
+          </div>
+        </div>
+
+        <div class="card rounded-3xl p-6 result-reveal">
+          <h3 class="font-black text-slate-900">한눈에 보는 내 결과</h3>
+          <div class="space-y-3 mt-5">
+            <div class="rounded-2xl bg-slate-50 border border-slate-100 p-4">
+              <div class="flex justify-between text-xs">
+                <span class="text-slate-500">하루 평균 배출</span>
+                <strong id="dailyCo2" class="text-slate-900">0 kg</strong>
+              </div>
+            </div>
+            <div class="rounded-2xl bg-slate-50 border border-slate-100 p-4">
+              <div class="flex justify-between text-xs">
+                <span class="text-slate-500">연간 예상 배출</span>
+                <strong id="yearlyCo2" class="text-slate-900">0 kg</strong>
+              </div>
+            </div>
+            <div class="rounded-2xl bg-slate-50 border border-slate-100 p-4">
+              <div class="flex justify-between text-xs">
+                <span class="text-slate-500">친환경 운전 예상 절감</span>
+                <strong id="savedCo2" class="text-emerald-700">0 kg</strong>
+              </div>
+            </div>
+          </div>
+
+          <div id="ecoMessage" class="mt-5 rounded-2xl bg-emerald-50 border border-emerald-100 p-4">
+            <p class="text-xs font-black text-emerald-800" id="ecoMessageTitle">🌿 좋아요!</p>
+            <p class="text-[11px] text-emerald-700 leading-relaxed mt-1" id="ecoMessageBody"></p>
+          </div>
+
+          <button onclick="document.getElementById('kotsaSection').scrollIntoView({behavior:'smooth'})"
+            class="mt-4 w-full py-3 rounded-2xl bg-white border border-slate-200 hover:bg-slate-50 text-xs font-bold text-slate-700">
+            친환경 운전 효과 보기 →
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Eco-Driving Action Guide Section -->
+    <section class="card rounded-3xl p-6 sm:p-8 mb-6">
+      <div class="mb-6">
+        <div class="flex items-center gap-2 mb-1">
+          <span class="px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 text-[10px] font-bold">한국교통안전공단 에코드라이브 실천항목</span>
+        </div>
+        <h3 class="text-xl font-black text-slate-900">친환경 운전, 이렇게 실천해 보세요</h3>
+        <p class="text-xs text-slate-500 mt-1">작은 습관의 변화가 얼마나 큰 이산화탄소 감축으로 이어지는지 확인해 보세요.</p>
+      </div>
+      
+      <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <!-- 1. 엔진예열 최소화 -->
+        <div class="rounded-2xl bg-white border border-slate-200 p-5 hover:border-emerald-300 transition-colors shadow-sm">
+          <div class="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-lg mb-3">⏱️</div>
+          <p class="font-black text-sm text-slate-800">1. 엔진예열 최소화</p>
+          <p class="text-[11px] text-slate-500 mt-1.5 leading-relaxed">
+            적정 예열 시간: <b>(여름) 10초 ~ (겨울) 30초</b><br>
+            요즘 차량은 전자제어식으로 긴 예열이 불필요합니다.
+          </p>
+          <div class="mt-3 pt-3 border-t border-slate-100">
+            <p class="text-[10px] font-bold text-emerald-600 mb-1">🌱 CO₂ 절감 효과</p>
+            <p class="text-[11px] text-slate-600">
+              불필요한 공회전을 <b>10분</b> 줄일 때마다 <b>약 160g</b>의 이산화탄소 배출을 막을 수 있습니다.
+            </p>
+          </div>
+        </div>
+
+        <!-- 2. 관성주행 활용 -->
+        <div class="rounded-2xl bg-white border border-slate-200 p-5 hover:border-emerald-300 transition-colors shadow-sm">
+          <div class="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-lg mb-3">📉</div>
+          <p class="font-black text-sm text-slate-800">2. 관성주행 (퓨얼컷) 활용</p>
+          <p class="text-[11px] text-slate-500 mt-1.5 leading-relaxed">
+            교차로 신호를 예측해 관성 정지, 오르막 전 가속 탄력 주행, 내리막길 엔진브레이크를 활용하세요.
+          </p>
+          <div class="mt-3 pt-3 border-t border-slate-100">
+            <p class="text-[10px] font-bold text-emerald-600 mb-1">🌱 CO₂ 절감 효과</p>
+            <p class="text-[11px] text-slate-600">
+              퓨얼컷(연료 차단) 구간에서는 <b>연료 소모와 배출량이 '0'</b>이 되며, 연비를 <b>약 10~20%</b> 높여줍니다.
+            </p>
+          </div>
+        </div>
+
+        <!-- 3. 적재물 다이어트 -->
+        <div class="rounded-2xl bg-white border border-slate-200 p-5 hover:border-emerald-300 transition-colors shadow-sm">
+          <div class="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-lg mb-3">🧳</div>
+          <p class="font-black text-sm text-slate-800">3. 적재물 다이어트</p>
+          <p class="text-[11px] text-slate-500 mt-1.5 leading-relaxed">
+            트렁크를 비우고 연료는 절반만 채워 무게를 줄이세요.
+          </p>
+          <div class="mt-3 pt-3 border-t border-slate-100">
+            <p class="text-[10px] font-bold text-emerald-600 mb-1">🌱 CO₂ 절감 효과 (50km 주행 시)</p>
+            <p class="text-[11px] text-slate-600">
+              • <b>-5kg</b> 감량 시: <b>약 92g</b> 절감<br>
+              • <b>-10kg</b> 감량 시: <b>약 184g</b> 절감<br>
+              • <b>-15kg</b> 감량 시: <b>약 276g</b> 절감
+            </p>
+          </div>
+        </div>
+
+        <!-- 4. 소모품 관리 철저 -->
+        <div class="rounded-2xl bg-white border border-slate-200 p-5 hover:border-emerald-300 transition-colors shadow-sm">
+          <div class="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-lg mb-3">🛠️</div>
+          <p class="font-black text-sm text-slate-800">4. 소모품 관리 철저</p>
+          <p class="text-[11px] text-slate-500 mt-1.5 leading-relaxed">
+            최소 분기별 1회 차량 정비가 필수입니다.
+          </p>
+          <div class="mt-3 pt-3 border-t border-slate-100">
+            <p class="text-[10px] font-bold text-emerald-600 mb-1">🌱 CO₂ 배출량과의 관계</p>
+            <p class="text-[11px] text-slate-600">
+              <b>에어필터 (주기 1만km):</b> 오염 시 산소 공급이 막혀 '불완전 연소'를 일으켜 CO₂ 배출이 급증합니다.<br>
+              <b>타이어 공기압:</b> 30% 부족 시 연비가 3% 악화되어 이산화탄소 배출이 덩달아 증가합니다.
+            </p>
+          </div>
+        </div>
+
+        <!-- 5. 경제속도 준수 -->
+        <div class="rounded-2xl bg-white border border-slate-200 p-5 hover:border-emerald-300 transition-colors shadow-sm">
+          <div class="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-lg mb-3">🧭</div>
+          <p class="font-black text-sm text-slate-800">5. 경제속도 준수</p>
+          <p class="text-[11px] text-slate-500 mt-1.5 leading-relaxed">
+            일반도로 <b>50~80km/h</b>, 고속도로 <b>90~100km/h</b>
+          </p>
+          <div class="mt-3 pt-3 border-t border-slate-100">
+            <p class="text-[10px] font-bold text-emerald-600 mb-1">🌱 CO₂ 절감 효과</p>
+            <p class="text-[11px] text-slate-600">
+              과속하면 공기 저항이 커져 연료가 낭비됩니다. 경제속도 준수 시 <b>100km 주행 당 약 2~3kg</b>의 배출량을 줄일 수 있습니다.
+            </p>
+          </div>
+        </div>
+
+        <!-- 6. 정속주행 유지 -->
+        <div class="rounded-2xl bg-white border border-slate-200 p-5 hover:border-emerald-300 transition-colors shadow-sm">
+          <div class="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-lg mb-3">🚗</div>
+          <p class="font-black text-sm text-slate-800">6. 정속주행 유지</p>
+          <p class="text-[11px] text-slate-500 mt-1.5 leading-relaxed">
+            급가속·급감속 자제, 불필요한 차로 변경 금지, 충분한 안전거리 확보
+          </p>
+          <div class="mt-3 pt-3 border-t border-slate-100">
+            <p class="text-[10px] font-bold text-emerald-600 mb-1">🌱 CO₂ 절감 효과</p>
+            <p class="text-[11px] text-slate-600">
+              급가감속을 하지 않으면 연비가 <b>최대 30% 향상</b>됩니다. 일일 급가속 <b>10회</b>만 줄여도 <b>약 230g</b>의 CO₂를 즉시 절감할 수 있습니다.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- KOTSA Effects Section -->
+    <section id="kotsaSection" class="card rounded-3xl p-6 sm:p-8">
+      <div class="mb-6">
+        <p class="text-xs font-bold text-emerald-700">친환경 운전 기대 효과</p>
+        <h3 class="text-xl font-black text-slate-900 mt-1">친환경 운전, 실천하면 어떤 점이 좋을까요?</h3>
+        <p class="text-xs text-slate-500 mt-1">한국교통안전공단 데이터 기반, 에코드라이브 실천 시 얻을 수 있는 3가지 확실한 혜택입니다.</p>
+      </div>
+      
+      <div class="grid md:grid-cols-3 gap-4">
+        <div class="rounded-2xl bg-emerald-50 border border-emerald-100 p-5">
+          <div class="w-10 h-10 rounded-full bg-white flex items-center justify-center text-xl shadow-sm">🌍</div>
+          <p class="font-black text-sm text-emerald-900 mt-4">건강 및 환경 보호</p>
+          <ul class="text-[11px] text-emerald-700 mt-3 space-y-2 list-disc list-inside">
+            <li>차량 냉방비 절약</li>
+            <li>대기오염 확장 방지로 질병 예방</li>
+            <li>의료비 절약으로 가계 지출 절감</li>
+          </ul>
+        </div>
+        
+        <div class="rounded-2xl bg-blue-50 border border-blue-100 p-5">
+          <div class="w-10 h-10 rounded-full bg-white flex items-center justify-center text-xl shadow-sm">💰</div>
+          <p class="font-black text-sm text-blue-900 mt-4">확실한 경제성 향상</p>
+          <ul class="text-[11px] text-blue-700 mt-3 space-y-2 list-disc list-inside">
+            <li>연비 10% 향상 시 182L 절감</li>
+            <li>1인당 약 35만 원 절감 (휘발유 1,900원 기준)</li>
+            <li>전국 연간 약 9조 2,245억 원 절감<br><span class="text-[9px] text-blue-500 opacity-80">(2026년 차량 2,667만 대 기준)</span></li>
+          </ul>
+        </div>
+        
+        <div class="rounded-2xl bg-amber-50 border border-amber-100 p-5">
+          <div class="w-10 h-10 rounded-full bg-white flex items-center justify-center text-xl shadow-sm">🛡️</div>
+          <p class="font-black text-sm text-amber-900 mt-4">교통사고 예방</p>
+          <ul class="text-[11px] text-amber-700 mt-3 space-y-2 list-disc list-inside">
+            <li>전체 교통사고 30% 감소</li>
+            <li>안전거리 확보 및 여유 운전 정착</li>
+            <li>전국 교통사고 비용 4조 2천억 원 감소</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- Eco Car Comparison Section (Star Rating Version) -->
+    <section class="card rounded-3xl p-6 sm:p-8">
+      <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-3 mb-6">
+        <div>
+          <p class="text-xs font-bold text-emerald-700">차종별 솔루션</p>
+          <h3 class="text-xl font-black text-slate-900 mt-1">친환경을 위해 어떤 자동차가 나을까?</h3>
+          <p class="text-xs text-slate-500 mt-1">내 배출량 기준으로 다양한 친환경 차량 교체 시 기대 효과와 보조금 혜택을 비교해 보세요.</p>
+        </div>
+      </div>
+
+      <div class="grid lg:grid-cols-2 gap-6">
+        <!-- Chart Area 교체 코드 (별점 표) -->
+        <div class="rounded-2xl border border-slate-200 bg-white p-5 overflow-x-auto shadow-sm">
+          <p class="text-xs font-bold text-slate-700 mb-4">차종별 장단점 한눈에 보기 (5점 만점)</p>
+          
+          <table class="w-full text-xs text-center min-w-[400px]">
+            <thead>
+              <tr class="border-b border-slate-200 text-slate-500">
+                <th class="pb-3 font-bold text-left w-1/4">평가 항목</th>
+                <th class="pb-3 font-bold text-blue-600">BEV (전기)</th>
+                <th class="pb-3 font-bold text-indigo-600">PHEV</th>
+                <th class="pb-3 font-bold text-green-600">HEV (하이브)</th>
+                <th class="pb-3 font-bold text-lime-600">FCEV (수소)</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <tr>
+                <td class="py-3 font-bold text-slate-700 text-left">유지비 절감</td>
+                <td class="py-3"><span class="text-yellow-400">★★★</span><span class="text-slate-200">★★</span></td>
+                <td class="py-3"><span class="text-yellow-400">★★★★</span><span class="text-slate-200">★</span></td>
+                <td class="py-3"><span class="text-yellow-400">★★★★★</span></td>
+                <td class="py-3"><span class="text-yellow-400">★★★</span><span class="text-slate-200">★★</span></td>
+              </tr>
+              <tr>
+                <td class="py-3 font-bold text-slate-700 text-left">충전/주유 편의성</td>
+                <td class="py-3"><span class="text-yellow-400">★★★★★</span></td>
+                <td class="py-3"><span class="text-yellow-400">★★★</span><span class="text-slate-200">★★</span></td>
+                <td class="py-3"><span class="text-yellow-400">★★★★★</span></td>
+                <td class="py-3"><span class="text-yellow-400">★</span><span class="text-slate-200">★★★★</span></td>
+              </tr>
+              <tr>
+                <td class="py-3 font-bold text-slate-700 text-left">장거리 주행 편의</td>
+                <td class="py-3"><span class="text-yellow-400">★★★★★</span></td>
+                <td class="py-3"><span class="text-yellow-400">★★★★★</span></td>
+                <td class="py-3"><span class="text-yellow-400">★★★★</span><span class="text-slate-200">★</span></td>
+                <td class="py-3"><span class="text-yellow-400">★★★★</span><span class="text-slate-200">★</span></td>
+              </tr>
+              <tr>
+                <td class="py-3 font-bold text-slate-700 text-left">구매 가격 적절성</td>
+                <td class="py-3"><span class="text-yellow-400">★★★★</span><span class="text-slate-200">★</span></td>
+                <td class="py-3"><span class="text-yellow-400">★★</span><span class="text-slate-200">★★★</span></td>
+                <td class="py-3"><span class="text-yellow-400">★★★</span><span class="text-slate-200">★★</span></td>
+                <td class="py-3"><span class="text-yellow-400">★★</span><span class="text-slate-200">★★★</span></td>
+              </tr>
+              <tr>
+                <td class="py-3 font-bold text-slate-700 text-left">정비 편의성</td>
+                <td class="py-3"><span class="text-yellow-400">★★★★</span><span class="text-slate-200">★</span></td>
+                <td class="py-3"><span class="text-yellow-400">★★★</span><span class="text-slate-200">★★</span></td>
+                <td class="py-3"><span class="text-yellow-400">★★★★★</span></td>
+                <td class="py-3"><span class="text-yellow-400">★★</span><span class="text-slate-200">★★★</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Details Area -->
+        <div class="space-y-4">
+          <div class="rounded-xl border border-green-200 bg-white p-4 hover:shadow-md transition">
+            <div class="flex justify-between items-start">
+              <div>
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-green-100 text-green-800">HEV (하이브리드)</span>
+                <p class="text-sm font-black text-slate-900 mt-1">내 배출량 대비 <span class="text-green-600">약 40%</span> 절감 가능</p>
+              </div>
+              <span id="hevSaveVal" class="text-sm font-black text-slate-400">계산 대기</span>
+            </div>
+            <p class="text-[11px] text-slate-500 mt-2">구매 보조금은 없지만 개별소비세 및 취득세 감면 등 세제 혜택과 공영주차장 할인 적용이 가능합니다.</p>
+          </div>
+
+          <div class="rounded-xl border border-indigo-200 bg-white p-4 hover:shadow-md transition">
+            <div class="flex justify-between items-start">
+              <div>
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-100 text-indigo-800">PHEV (플러그인 하이브리드)</span>
+                <p class="text-sm font-black text-slate-900 mt-1">내 배출량 대비 <span class="text-indigo-600">약 60%</span> 절감 가능</p>
+              </div>
+              <span id="phevSaveVal" class="text-sm font-black text-slate-400">계산 대기</span>
+            </div>
+            <p class="text-[11px] text-slate-500 mt-2">단거리 출퇴근 시 전기만 사용 가능. 구매 보조금은 없으나 HEV와 유사한 세제 혜택을 지원받습니다.</p>
+          </div>
+
+          <div class="rounded-xl border border-blue-200 bg-white p-4 hover:shadow-md transition">
+            <div class="flex justify-between items-start">
+              <div>
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800">BEV (전기차)</span>
+                <p class="text-sm font-black text-slate-900 mt-1">주행 중 배출량 <span class="text-blue-600">100%</span> 절감 (Zero)</p>
+              </div>
+              <span id="bevSaveVal" class="text-sm font-black text-slate-400">계산 대기</span>
+            </div>
+            <p class="text-[11px] text-slate-500 mt-2">국고 보조금 + 지자체 보조금 (최대 약 1,000만 원 내외 지원), 취득세 감면 및 톨게이트 50% 할인.</p>
+          </div>
+
+          <div class="rounded-xl border border-lime-200 bg-white p-4 hover:shadow-md transition">
+            <div class="flex justify-between items-start">
+              <div>
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-lime-100 text-lime-800">FCEV (수소전기차)</span>
+                <p class="text-sm font-black text-slate-900 mt-1">주행 중 배출량 <span class="text-lime-600">100%</span> 절감 + 공기 정화</p>
+              </div>
+              <span id="fcevSaveVal" class="text-sm font-black text-slate-400">계산 대기</span>
+            </div>
+            <p class="text-[11px] text-slate-500 mt-2">국고 + 지자체 보조금 (최대 3,000만 원 이상)으로 가장 강력한 지원금 혜택. 충전 인프라 확인이 필요합니다.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Reference -->
+    <section class="rounded-3xl bg-white/60 border border-slate-200 p-6">
+      <div class="flex items-center justify-between gap-3">
+        <div>
+          <h3 class="text-sm font-black text-slate-800">산출 기준 및 참고 자료</h3>
+          <p class="text-[11px] text-slate-500 mt-1">프로토타입의 계산 기준과 관련 자료를 확인할 수 있습니다.</p>
+        </div>
+        <span class="text-[10px] text-slate-400">EcoCheck</span>
+      </div>
+      <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-4">
+        <a href="https://www.gir.go.kr/" target="_blank" class="rounded-2xl bg-white border border-slate-200 p-4 hover:border-emerald-300">
+          <p class="text-xs font-black text-emerald-700">환경부 온실가스종합정보센터</p>
+          <p class="text-[11px] text-slate-500 mt-1">배출계수 관련 참고 자료</p>
+        </a>
+        <a href="https://www.kotsa.or.kr/" target="_blank" class="rounded-2xl bg-white border border-slate-200 p-4 hover:border-emerald-300">
+          <p class="text-xs font-black text-slate-700">한국교통안전공단</p>
+          <p class="text-[11px] text-slate-500 mt-1">자동차·교통 통계 참고 자료</p>
+        </a>
+        <a href="file:///C:/Users/ew468/Desktop/url?id=2" target="_blank" class="rounded-2xl bg-white border border-slate-200 p-4 hover:border-emerald-300">
+          <p class="text-xs font-black text-slate-700">탄소중립포인트 자동차</p>
+          <p class="text-[11px] text-slate-500 mt-1">주행거리 감축 관련 제도 참고</p>
+        </a>
+      </div>
+    </section>
+
+    <footer class="text-center text-[11px] text-slate-400 pt-1">
+      EcoCheck · 차량 입력값을 활용한 탄소배출량 계산 프로토타입<br>
+      본 프로젝트의 CO₂ 배출량 산출 및 빙하 융해량 시각화는 환경부 배출계수 및 Science지 게재 논문(Notz & Stroeve, 2016)을 기반으로 구현되었습니다.
+    </footer>
+  </main>
+</div>
+
+<!-- Calculation overlay -->
+<div id="loadingOverlay" class="hide fixed inset-0 z-[100] bg-slate-900/35 backdrop-blur-sm flex items-center justify-center p-4">
+  <div class="bg-white rounded-3xl p-8 w-full max-w-sm text-center shadow-2xl border border-white/60">
+    <div class="w-16 h-16 mx-auto rounded-full bg-emerald-50 flex items-center justify-center">
+      <div class="spinner w-8 h-8 border-4 border-emerald-100 border-t-emerald-500 rounded-full"></div>
+    </div>
+    <h3 class="text-lg font-black text-slate-900 mt-5">계산 중/읽는 중이에요</h3>
+    <p class="text-xs text-slate-500 mt-2">차량 정보와 운전 습관을 분석하고 있어요.</p>
+    <div class="mt-5 text-xs font-bold text-emerald-700" id="loadingText">데이터 분석 중...</div>
+  </div>
+</div>
+
+<script>
+  let emissionChartInstance = null;
+  let currentImpactTheme = 'glacier';
+  let currentImpactData = { totalCo2: 0, stage: 1 };
+  let previewMode = false;
+
+  const vehicleData = {
+    compact:    { weight: '900 kg',   cd: '0.31', eff: 15.7, name: '경차 (모닝/레이)' },
+    subcompact: { weight: '1,230 kg', cd: '0.27', eff: 14.8, name: '준중형 (아반떼)' },
+    midsize:    { weight: '1,415 kg', cd: '0.26', eff: 13.0, name: '중형 (쏘나타/K5)' },
+    large:      { weight: '1,700 kg', cd: '0.28', eff: 11.2, name: '준대형/대형 (그랜저/G80)' },
+    suv_gv70:   { weight: '1,825 kg', cd: '0.32', eff: 10.7, name: 'SUV (Genesis GV70 2.5T)' },
+    truck:      { weight: '1,950 kg', cd: '0.42', eff: 8.8,  name: '화물차 (포터/봉고)' }
+  };
+
+  window.addEventListener('load', () => {
+    updateVehicleSpec();
+    renderImpactTheme();
+  });
+
+  function updateVehicleSpec() {
+    const val = document.getElementById('vehicleSelect').value;
+    const data = vehicleData[val];
+
+    document.getElementById('specWeight').innerText = data.weight;
+    document.getElementById('specCd').innerText = data.cd;
+    document.getElementById('inputEff').value = data.eff; 
+  }
+
+  function calculateEmissions() {
+    const vKey = document.getElementById('vehicleSelect').value;
+    
+    const eff = parseFloat(document.getElementById('inputEff').value) || vehicleData[vKey].eff;
+    const distance = parseFloat(document.getElementById('inputDistance').value) || 0;
+    const rapidAccel = parseFloat(document.getElementById('inputRapidAccel').value) || 0;
+    const rapidBrake = parseFloat(document.getElementById('inputRapidBrake').value) || 0;
+
+    if (distance <= 0) {
+      alert('월간 주행거리를 1km 이상 입력해 주세요.');
+      return;
+    }
+
+    const baseFuel = distance / eff;
+    const extraFuel = ((rapidAccel * 0.012) + (rapidBrake * 0.008));
+    const totalFuel = baseFuel + extraFuel;
+
+    const totalCo2 = totalFuel * 2.31;
+    const baseCo2 = baseFuel * 2.31;
+    const extraCo2 = extraFuel * 2.31;
+    const savedCo2 = extraCo2 * 0.8;
+
+    showLoading(() => {
+      renderResults({
+        totalFuel, totalCo2, baseCo2, extraCo2, savedCo2,
+        distance, rapidAccel, rapidBrake, vehicleName: vehicleData[vKey].name
+      });
+    });
+  }
+
+  function showLoading(callback) {
+    const overlay = document.getElementById('loadingOverlay');
+    const loadingText = document.getElementById('loadingText');
+    const steps = [
+      '주행거리 분석 중...',
+      '운전 습관 반영 중...',
+      'CO₂ 배출량 계산 중...',
+      '결과 시각화 준비 중...'
+    ];
+
+    overlay.classList.remove('hide');
+    let i = 0;
+    loadingText.innerText = steps[0];
+
+    const interval = setInterval(() => {
+      i++;
+      if (i < steps.length) {
+        loadingText.innerText = steps[i];
+      }
+    }, 300);
+
+    setTimeout(() => {
+      clearInterval(interval);
+      overlay.classList.add('hide');
+      callback();
+    }, 1350);
+  }
+
+  function renderResults(data) {
+    const {
+      totalFuel, totalCo2, baseCo2, extraCo2, savedCo2,
+      distance, rapidAccel, rapidBrake, vehicleName
+    } = data;
+
+    document.getElementById('resultSection').classList.remove('hide');
+
+    document.getElementById('resultCo2').innerText = Math.round(totalCo2).toLocaleString();
+    document.getElementById('baseCo2').innerText = Math.round(baseCo2).toLocaleString();
+    
+    const extraCo2Display = extraCo2 > 0 && extraCo2 < 1 ? extraCo2.toFixed(1) : Math.round(extraCo2).toLocaleString();
+    document.getElementById('extraCo2').innerText = extraCo2Display;
+    
+    document.getElementById('fuelUsed').innerText = Math.round(totalFuel).toLocaleString();
+    
+    const savedCo2Display = savedCo2 > 0 && savedCo2 < 1 ? savedCo2.toFixed(1) : Math.round(savedCo2).toLocaleString();
+    document.getElementById('savedCo2').innerText = savedCo2Display;
+    
+    document.getElementById('dailyCo2').innerText = `${(totalCo2 / 30).toFixed(1)} kg`;
+    document.getElementById('yearlyCo2').innerText = `${Math.round(totalCo2 * 12).toLocaleString()} kg`;
+
+    const reference = 250; 
+    const rate = Math.round((totalCo2 / reference) * 100);
+    const meterWidth = Math.min((totalCo2 / reference) * 100, 100);
+
+    document.getElementById('resultRate').innerText = `${rate}%`;
+    document.getElementById('resultMeter').style.width = `${meterWidth}%`;
+
+    const sentence = totalCo2 <= reference
+      ? `${vehicleName} 기준으로 현재 입력한 주행 습관을 반영한 월간 예상치입니다.`
+      : `${vehicleName} 기준 월간 참고선보다 높은 수준으로 계산되었습니다. 급가속·급감속을 줄여보세요.`;
+
+    document.getElementById('resultSentence').innerText = sentence;
+
+   const title = document.getElementById('ecoMessageTitle');
+    const body = document.getElementById('ecoMessageBody');
+    
+    // 급가속과 급감속 횟수의 합산
+    const totalRapidEvents = rapidAccel + rapidBrake;
+
+    if (totalRapidEvents === 0) {
+      title.innerText = '🌍 완벽한 운전 습관!';
+      body.innerText = '급가속·급감속 0회! 정말 훌륭한 운전 습관을 가지고 계시네요. 여기서 대중교통이나 자전거를 이용해 주행거리까지 10% 감축한다면 아름다운 지구 환경을 지키는 데 큰 기여를 할 수 있습니다.';
+    } else if (totalRapidEvents >= 5) {
+      title.innerText = '⚠️ 운전 습관 개선이 필요해요';
+      body.innerText = `현재 급가속·급감속(${totalRapidEvents}회) 입력값에 따른 추가 배출량이 높습니다. 아래 '친환경 운전 실천항목'을 꼭 확인하시고 배출량을 획기적으로 줄여보세요!`;
+    } else {
+      // 👉 수정된 부분: 1~4회일 때 조금 더 줄이도록 부드럽게 독려
+      title.innerText = '🚗 조금만 더 줄여볼까요?';
+      body.innerText = `현재 급가속·급감속이 총 ${totalRapidEvents}회 발생했습니다. 횟수가 많지는 않지만, 의식해서 조금만 더 부드럽게 주행한다면 완벽한 친환경 운전에 도달할 수 있어요!`;
+    }
+
+    document.getElementById('hevSaveVal').innerText = `-${Math.round(totalCo2 * 0.4).toLocaleString()} kg`;
+    document.getElementById('phevSaveVal').innerText = `-${Math.round(totalCo2 * 0.6).toLocaleString()} kg`;
+    document.getElementById('bevSaveVal').innerText = `-${Math.round(totalCo2).toLocaleString()} kg`;
+    document.getElementById('fcevSaveVal').innerText = `-${Math.round(totalCo2).toLocaleString()} kg`;
+
+    const stage = getImpactStage(totalCo2);
+    currentImpactData = { totalCo2, stage };
+    previewMode = false;
+    document.getElementById('treeCount').innerText = Math.max(1, Math.ceil(totalCo2 / 2.1)).toLocaleString();
+    
+    renderImpactTheme();
+    renderChart(totalCo2, extraCo2);
+    document.getElementById('resultSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function renderChart(totalCo2, extraCo2) {
+    const canvas = document.getElementById('emissionChart');
+    if (emissionChartInstance) emissionChartInstance.destroy();
+
+    let labels = [];
+    let dataValues = [];
+    let chartTitle = '';
+
+    if (extraCo2 > 0) {
+      labels = ['현재 운전 습관', '친환경 운전 실천'];
+      dataValues = [extraCo2, extraCo2 * 0.2];
+      chartTitle = '낭비되는 추가 배출량';
+    } else {
+      labels = ['현재 주행 배출량', '주행거리 10% 감축 시'];
+      dataValues = [totalCo2, totalCo2 * 0.9];
+      chartTitle = '월간 총 배출량';
+    }
+
+    const maxVal = Math.max(...dataValues) * 1.15;
+    const minVal = extraCo2 > 0 ? 0 : Math.floor(Math.min(...dataValues) * 0.85);
+
+    emissionChartInstance = new Chart(canvas.getContext('2d'), {
+      type: 'bar',
+      data: {
+        labels: labels,
+        datasets: [{
+          label: chartTitle,
+          data: dataValues,
+          backgroundColor: [
+            'rgba(239, 107, 91, .8)', 
+            'rgba(43, 180, 99, .8)'
+          ],
+          borderColor: ['#ef6b5b', '#2bb463'],
+          borderWidth: 1,
+          borderRadius: 12,
+          maxBarThickness: 72
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: '#17221c',
+            padding: 12,
+            callbacks: { 
+              label: (ctx) => `${chartTitle}: ${ctx.raw.toFixed(1)} kg CO₂` 
+            }
+          }
+        },
+        scales: {
+          y: {
+            beginAtZero: extraCo2 > 0, 
+            min: minVal,
+            max: maxVal,
+            ticks: { color: '#7a8980', font: { size: 10 } },
+            grid: { color: '#edf1ee' }
+          },
+          x: {
+            ticks: { color: '#56655c', font: { size: 11, weight: '600' } },
+            grid: { display: false }
+          }
+        }
+      }
+    });
+  }
+
+  function getImpactStage(totalCo2) {
+    if (totalCo2 <= 150) return 1;
+    if (totalCo2 <= 250) return 2;
+    return 3;
+  }
+
+  function previewStage(stageNum) {
+    previewMode = stageNum;
+    renderImpactTheme(true);
+  }
+
+  function restoreStage() {
+    previewMode = false;
+    renderImpactTheme();
+  }
+
+  function setImpactTheme(theme) {
+    currentImpactTheme = theme;
+    ['Glacier', 'Island', 'Trees'].forEach(name => {
+      const button = document.getElementById(`impactTab${name}`);
+      button.classList.toggle('active', name.toLowerCase() === theme);
+    });
+    renderImpactTheme(previewMode !== false);
+  }
+
+  function renderImpactTheme(isPreview = false) {
+    const stage = isPreview ? previewMode : (currentImpactData.stage || 1);
+    const totalCo2 = currentImpactData.totalCo2 || 0;
+    const visual = document.getElementById('impactVisual');
+    const stageLabel = document.getElementById('impactStageLabel');
+    const stageReason = document.getElementById('impactStageReason');
+    const treeCount = Math.max(1, Math.ceil(totalCo2 / 2.1));
+
+    if (!visual) return;
+
+    const stageText = stage === 1 ? '1단계' : stage === 2 ? '2단계' : '3단계';
+    const stageLevelText = stage === 1 ? '낮은 배출' : stage === 2 ? '주의가 필요한 배출' : '높은 배출';
+    const stageTheme = stage === 1
+      ? { bg: 'bg-emerald-50', border: 'border-emerald-100', text: 'text-emerald-700' }
+      : stage === 2
+        ? { bg: 'bg-orange-50', border: 'border-orange-100', text: 'text-orange-600' }
+        : { bg: 'bg-rose-50', border: 'border-rose-100', text: 'text-rose-600' };
+        
+    stageLabel.innerText = stageText + (isPreview ? ' (미리보기)' : '');
+    stageLabel.className = `text-3xl sm:text-4xl font-black tracking-tight ${stageTheme.text}`;
+    
+    const stageLevel = document.getElementById('impactStageLevelText');
+    if (stageLevel) {
+      stageLevel.innerText = stageLevelText;
+      stageLevel.className = `text-base sm:text-lg font-black ${stageTheme.text}`;
+    }
+    const stageCard = document.getElementById('impactStageCard');
+    if (stageCard) {
+      stageCard.className = `rounded-2xl p-5 sm:p-6 border transition-all duration-300 ${stageTheme.bg} ${stageTheme.border}`;
+    }
+
+    [1,2,3].forEach(n => document.getElementById(`stageDot${n}`)?.classList.toggle('active', n <= stage));
+
+    if (totalCo2 === 0 && !isPreview) {
+      stageReason.innerText = '계산 전 미리보기 · 결과 입력 시 3단계로 움직여요.';
+    } else if (isPreview) {
+      stageReason.innerText = `현재 [${stageText}] 상태를 미리보고 있습니다.`;
+    } else if (stage === 1) {
+      stageReason.innerText = '현재 배출량은 1단계로 표시됩니다.';
+    } else if (stage === 2) {
+      stageReason.innerText = '평균적인 수준을 넘어 환경 영향이 커지고 있어요.';
+    } else {
+      stageReason.innerText = '배출량이 높아 3단계 환경 영향으로 표시됩니다.';
+    }
+
+    if (currentImpactTheme === 'glacier') {
+      const water = stage === 1 ? 27 : stage === 2 ? 49 : 71;
+      const iceWidth = stage === 1 ? '58%' : stage === 2 ? '44%' : '30%';
+      const iceHeight = stage === 1 ? '46%' : stage === 2 ? '35%' : '24%';
+      const iceBottom = stage === 1 ? '27%' : stage === 2 ? '22%' : '17%';
+      const bearScale = stage === 1 ? '1' : stage === 2 ? '.9' : '.76';
+      const title = stage === 1 ? '빙하가 넉넉하게 남아 있어요' : stage === 2 ? '빙하가 줄고 바닷물이 올라오고 있어요' : '북극곰이 설 공간이 거의 남지 않아요';
+      
+      const meltAmount = Math.round(totalCo2 * 15).toLocaleString();
+      const desc = totalCo2 > 0 && !isPreview 
+        ? `CO₂ 1kg 배출 시 약 15kg의 빙하가 융해됩니다. 내 월간 배출량으로 인해 <b>약 ${meltAmount}kg의 빙하가 녹아내렸습니다.</b>` 
+        : '배출량 단계가 올라갈수록 빙하의 크기가 줄고 수위가 점점 높아집니다.';
+
+      visual.innerHTML = `
+        <div class="impact-stage-card">
+          <div class="glacier-scene">
+            <div class="glacier-sky"></div>
+            <div class="glacier-horizon"></div>
+            <div class="iceberg" style="--ice-width:${iceWidth};--ice-height:${iceHeight};--ice-bottom:${iceBottom}"><div class="ice-crack"></div></div>
+            <div class="polar-bear" style="--bear-scale:${bearScale};--ice-bottom:${iceBottom};--ice-height:${iceHeight}">
+              <div class="ear1"></div><div class="ear2"></div><div class="head"></div><div class="eye"></div><div class="nose"></div>
+              <div class="body"></div><div class="leg l1"></div><div class="leg l2"></div>
+            </div>
+            <div class="glacier-splash"></div>
+            <div class="rising-water" style="--water-height:${water}%"></div>
+            <div class="glacier-tint"></div>
+          </div>
+          <div class="impact-caption">
+            <div class="text-[10px] font-bold text-sky-700">🧊 빙하 영향</div>
+            <div class="text-lg font-black text-slate-900 mt-0.5">${isPreview ? '미리보기' : Math.round(totalCo2).toLocaleString() + ' kg CO₂'}</div>
+          </div>
+          <div class="impact-stage-copy">
+            <p class="text-sm font-black text-slate-900">${title}</p>
+            <p class="text-[11px] text-slate-600 leading-relaxed mt-1">${desc}</p>
+          </div>
+        </div>`;
+    }
+
+    if (currentImpactTheme === 'island') {
+      const islandWidth = stage === 1 ? '72%' : stage === 2 ? '48%' : '28%';
+      const landBottom = stage === 1 ? '31%' : stage === 2 ? '27%' : '20%';
+      const houseScale = stage === 1 ? '1' : stage === 2 ? '.82' : '.62';
+      const title = stage === 1 ? '섬의 면적이 넓게 유지돼요' : stage === 2 ? '섬의 가장자리가 물에 잠기기 시작해요' : '남아 있는 섬의 면적이 크게 줄어요';
+      
+      const iceLoss = (totalCo2 * 0.003).toFixed(2);
+      const desc = totalCo2 > 0 && !isPreview
+        ? `CO₂ 1톤당 3m²의 북극 해빙이 감소합니다. 내 월간 배출량으로 인해 <b>약 ${iceLoss}m²의 해빙 면적이 사라져 해수면 상승에 기여했습니다.</b>`
+        : '배출 단계가 올라갈수록 섬을 둘러싼 바닷물이 높아지고 육지가 작아집니다.';
+
+      visual.innerHTML = `
+        <div class="impact-stage-card">
+          <div class="island-scene">
+            <div class="island-cloud" style="left:10%;top:12%"></div>
+            <div class="island-cloud" style="left:58%;top:23%;animation-delay:-6s;transform:scale(.78)"></div>
+            <div class="island-water"></div>
+            <div class="island-land" style="--island-width:${islandWidth};bottom:${landBottom}"></div>
+            <div class="island-house" style="--house-scale:${houseScale};bottom:calc(${landBottom} + 48px)">
+              <div class="roof"></div><div class="body"></div><div class="door"></div>
+            </div>
+          </div>
+          <div class="impact-caption">
+            <div class="text-[10px] font-bold text-cyan-700">🏝️ 섬 면적 변화</div>
+            <div class="text-lg font-black text-slate-900 mt-0.5">${isPreview ? '미리보기' : Math.round(totalCo2).toLocaleString() + ' kg CO₂'}</div>
+          </div>
+          <div class="impact-stage-copy">
+            <p class="text-sm font-black text-slate-900">${title}</p>
+            <p class="text-[11px] text-slate-600 leading-relaxed mt-1">${desc}</p>
+          </div>
+        </div>`;
+    }
+
+    if (currentImpactTheme === 'trees') {
+      const visibleTrees = stage === 1 ? 5 : stage === 2 ? 11 : 18;
+      let treeHtml = '';
+      for (let i = 0; i < visibleTrees; i++) {
+        const delay = (i * 0.07).toFixed(2);
+        treeHtml += `<div class="tree-icon" style="animation-delay:${delay}s"><div class="crown"></div><div class="trunk"></div></div>`;
+      }
+      const title = stage === 1 ? '필요한 나무의 수가 비교적 적어요' : stage === 2 ? '배출량이 늘수록 필요한 나무가 많아져요' : '탄소를 상쇄하려면 많은 나무가 필요해요';
+      visual.innerHTML = `
+        <div class="impact-stage-card">
+          <div class="forest-scene">
+            <div class="tree-glow"></div>
+            <div class="tree-row">${treeHtml}</div>
+            <div class="forest-ground"></div>
+          </div>
+          <div class="impact-caption">
+            <div class="text-[10px] font-bold text-emerald-700">🌳 나무 환산</div>
+            <div class="text-lg font-black text-slate-900 mt-0.5">${isPreview ? '미리보기' : '약 ' + treeCount.toLocaleString() + ' 그루 / 월'}</div>
+          </div>
+          <div class="impact-stage-copy">
+            <p class="text-sm font-black text-slate-900">${title}</p>
+            <p class="text-[11px] text-slate-600 leading-relaxed mt-1">시연용으로 나무 1그루가 월간 흡수하는 양을 환산 가정하여 필요한 나무 수를 시각화합니다.</p>
+          </div>
+        </div>`;
+    }
+  }
+
+  async function handleImageUpload(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const overlay = document.getElementById('loadingOverlay');
+    const loadingText = document.getElementById('loadingText');
+    overlay.classList.remove('hide');
+    loadingText.innerText = '사진 속 주행 데이터를 읽고 있어요...\n(약 3~5초 소요)';
+
+    try {
+      const result = await Tesseract.recognize(file, 'kor', {
+        logger: m => {
+          if (m.status === 'recognizing text') {
+            loadingText.innerText = `글자 판독 중... ${Math.round(m.progress * 100)}%`;
+          }
+        }
+      });
+
+      const text = result.data.text.replace(/\s+/g, '');
+      console.log("OCR 추출 텍스트:", text);
+
+      let distance = 0;
+      let rapidAccel = 0;
+      let rapidBrake = 0;
+      let eff = 0;
+
+      const distMatch = text.match(/(?:운전거리|주행거리|동안|누적).*?([\d,]+(?:\.\d+)?)km/i) || text.match(/([\d,]+(?:\.\d+)?)km/i);
+      if (distMatch) distance = parseFloat(distMatch[1].replace(/,/g, ''));
+
+      const accelMatch = text.match(/급가속(\d+)회/);
+      if (accelMatch) rapidAccel = parseInt(accelMatch[1], 10);
+
+      const brakeMatch = text.match(/급감속(\d+)회/);
+      if (brakeMatch) rapidBrake = parseInt(brakeMatch[1], 10);
+
+      const effMatch = text.match(/연비.*?([\d,]+(?:\.\d+)?)/) || text.match(/([\d,]+(?:\.\d+)?)km\/[lL]/i);
+      if (effMatch) eff = parseFloat(effMatch[1].replace(/,/g, ''));
+
+      if (distance > 0) document.getElementById('inputDistance').value = distance;
+      document.getElementById('inputRapidAccel').value = rapidAccel;
+      document.getElementById('inputRapidBrake').value = rapidBrake;
+      if (eff > 0) document.getElementById('inputEff').value = eff;
+
+      overlay.classList.add('hide');
+      
+      let alertMsg = `📷 사진 인식 완료!\n\n- 주행거리: ${distance > 0 ? distance : '? '} km\n- 급가속: ${rapidAccel} 회\n- 급감속: ${rapidBrake} 회\n`;
+      
+      if (eff > 0) {
+        alertMsg += `- 연비: ${eff} km/L\n\n(혹시 숫자가 다르게 인식되었다면 직접 수정해 주세요!)`;
+      } else {
+        alertMsg += `- 연비: 인식 불가\n\n⚠️ 연비를 읽을 수 없습니다. 차종에 맞는 기본값이 적용되어 있으니, 필요시 연비 입력칸에서 직접 수정해 주세요!`;
+      }
+      
+      alert(alertMsg);
+
+    } catch (error) {
+      console.error(error);
+      overlay.classList.add('hide');
+      alert("사진을 읽는 중 오류가 발생했습니다. 직접 입력해 주세요.");
+    }
+  }
+
+  function simulateApiConnect(provider) {
+    document.getElementById('inputDistance').value = 1100;
+    document.getElementById('inputRapidAccel').value = 3;
+    document.getElementById('inputRapidBrake').value = 2;
+    alert(`⚡ ${provider} 연동을 시뮬레이션했습니다.\n주행거리와 운전 습관 데이터를 입력값에 반영했습니다.`);
+  }
+</script>
+
+</body>
+</html>
